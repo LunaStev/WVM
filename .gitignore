@@ -1,0 +1,13 @@
+out/
+tests/
+.idea/
+.vscode/
+.lunacode/
+.zed/
+
+*.o
+*.qcow2
+*.iso
+*.img
+*.xml
+
