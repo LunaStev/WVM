@@ -27,10 +27,37 @@ namespace wvm {
 
         cmd << "-drive file=\"" << disk_path.string() << "\",format=" << config.disk_format << " ";
 
-        if (config.boot_mode == "iso" && !config.boot_path.empty()) {
+        if (config.boot_mode == "disk") {
+            auto boot_disk_path = dist / config.boot_path;
+
+            cmd << "-drive file=\""
+                << boot_disk_path.string()
+                << "\",format=" << config.disk_format << " ";
+        } else if (config.boot_mode == "iso") {
+            auto disk_path = dist / config.disk_path;
             auto iso_path = dist / config.boot_path;
-            cmd << "-cdrom \"" << iso_path.string() << "\" ";
+
+            cmd << "-drive file=\""
+                << disk_path.string()
+                << "\",format=" << config.disk_format << " ";
+
+            cmd << "-cdrom \""
+                << iso_path.string()
+                << "\" ";
+
             cmd << "-boot d ";
+        } else if (config.boot_mode == "img") {
+            auto img_path = dist / config.boot_path;
+
+            cmd << "-drive file=\""
+                << img_path.string()
+                << "\",format=raw ";
+        } else {
+            auto disk_path = dist / config.disk_path;
+
+            cmd << "-drive file=\""
+                << disk_path.string()
+                << "\",format=" << config.disk_format << " ";
         }
 
         cmd << "-netdev user,id=net0 ";

@@ -125,8 +125,7 @@ int command_install(int argc, char** argv) {
         config.boot_path = iso;
     } else if (!img.empty()) {
         config.boot_mode = "img";
-        config.disk_path = img;
-        config.disk_format = "raw";
+        config.boot_path = img;
     } else {
         std::cerr << "Expected --iso or --img.\n";
         return 1;
@@ -141,7 +140,7 @@ int command_install(int argc, char** argv) {
     return 0;
 }
 
-int command_run(int argc, char** argv) {
+    int command_run(int argc, char** argv) {
     fs::path dist = ".";
 
     if (argc >= 3) {
@@ -154,6 +153,35 @@ int command_run(int argc, char** argv) {
     if (!load_config(config_path, config)) {
         std::cerr << "Failed to load wvm.xml.\n";
         return 1;
+    }
+
+    std::string iso = get_arg_value(argc, argv, "--iso");
+    std::string img = get_arg_value(argc, argv, "--img");
+
+    if (argc >= 4 && std::string(argv[3]) == "--disk") {
+        config.boot_mode = "disk";
+        config.boot_path = config.disk_path;
+
+        if (!save_config(config_path, config)) {
+            std::cerr << "Failed to save wvm.xml.\n";
+            return 1;
+        }
+    } else if (!iso.empty()) {
+        config.boot_mode = "iso";
+        config.boot_path = iso;
+
+        if (!save_config(config_path, config)) {
+            std::cerr << "Failed to save wvm.xml.\n";
+            return 1;
+        }
+    } else if (!img.empty()) {
+        config.boot_mode = "img";
+        config.boot_path = img;
+
+        if (!save_config(config_path, config)) {
+            std::cerr << "Failed to save wvm.xml.\n";
+            return 1;
+        }
     }
 
     std::string command = build_qemu_command(dist, config);
