@@ -2,66 +2,143 @@
 
 #include <filesystem>
 #include <sstream>
+#include <string_view>
+#include <unistd.h>
 
 namespace wvm {
 
-    std::string build_qemu_command(
-        const std::filesystem::path& dist,
-        const VMConfig& config
-    ) {
-        std::stringstream cmd;
+namespace {
 
-        cmd << "qemu-system-" << config.arch << " ";
-        cmd << "-machine " << config.machine << " ";
+std::filesystem::path resolve_path(
+    const std::filesystem::path& dist,
+    const std::string& path
+) {
+    const std::filesystem::path candidate(path);
+    return candidate.is_absolute() ? candidate : dist / candidate;
+}
 
-        const bool has_kvm = std::filesystem::exists("/dev/kvm");
+std::string escape_drive_value(const std::filesystem::path& path) {
+    std::string escaped;
+    const std::string value = path.string();
+    escaped.reserve(value.size());
 
-        if (has_kvm) {
-            cmd << "-enable-kvm ";
-            cmd << "-cpu " << config.cpu << " ";
-        } else {
-            cmd << "-cpu max ";
+    for (const char character : value) {
+        escaped.push_back(character);
+        if (character == ',') {
+            escaped.push_back(',');
         }
+    }
 
-        cmd << "-m " << config.memory << " ";
-        cmd << "-smp " << config.cores << " ";
+    return escaped;
+}
 
-        const auto disk_path = dist / config.disk_path;
+std::string shell_quote(std::string_view argument) {
+    if (!argument.empty() && argument.find_first_not_of(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./,:+=-"
+        ) == std::string_view::npos) {
+        return std::string(argument);
+    }
 
-        // VM의 기본 설치/시스템 디스크는 한 번만 추가한다.
-        cmd << "-drive file=\""
-            << disk_path.string()
-            << "\",format=" << config.disk_format << " ";
+    std::string quoted = "'";
+    for (const char character : argument) {
+        if (character == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted.push_back(character);
+        }
+    }
+    quoted.push_back('\'');
+    return quoted;
+}
+
+void append_drive(
+    Command& command,
+    const std::filesystem::path& path,
+    const std::string& format
+) {
+    command.emplace_back("-drive");
+    command.emplace_back(
+        "file=" + escape_drive_value(path) + ",format=" + format
+    );
+}
+
+}
+
+bool kvm_available(const std::string& guest_architecture) {
+#if defined(__x86_64__)
+    const bool native_architecture = guest_architecture == "x86_64";
+#elif defined(__aarch64__)
+    const bool native_architecture = guest_architecture == "aarch64";
+#else
+    const bool native_architecture = false;
+#endif
+
+    return native_architecture && access("/dev/kvm", R_OK | W_OK) == 0;
+}
+
+Command build_qemu_command(
+    const std::filesystem::path& dist,
+    const VMConfig& config,
+    const bool enable_kvm
+) {
+    Command command = {
+        "qemu-system-" + config.arch,
+        "-name", config.name,
+        "-machine", config.machine,
+        "-cpu", enable_kvm ? config.cpu : "max",
+        "-m", config.memory,
+        "-smp", std::to_string(config.cores)
+    };
+
+    if (enable_kvm) {
+        command.emplace(command.begin() + 5, "-enable-kvm");
+    }
+
+    const auto disk_path = resolve_path(dist, config.disk_path);
+
+    // Raw boot images must be enumerated before the persistent system disk so
+    // legacy BIOS boot order=c selects the requested image.
+    if (config.boot_mode == "img") {
+        append_drive(command, resolve_path(dist, config.boot_path), "raw");
+        append_drive(command, disk_path, config.disk_format);
+        command.insert(command.end(), {"-boot", "order=c"});
+    } else {
+        append_drive(command, disk_path, config.disk_format);
 
         if (config.boot_mode == "disk") {
-            cmd << "-boot c ";
+            command.insert(command.end(), {"-boot", "order=c"});
         } else if (config.boot_mode == "iso") {
-            const auto iso_path = std::filesystem::path(config.boot_path).is_absolute()
-                ? std::filesystem::path(config.boot_path)
-                : dist / config.boot_path;
-
-            cmd << "-cdrom \""
-                << iso_path.string()
-                << "\" ";
-
-            cmd << "-boot d ";
-        } else if (config.boot_mode == "img") {
-            const auto img_path = std::filesystem::path(config.boot_path).is_absolute()
-                ? std::filesystem::path(config.boot_path)
-                : dist / config.boot_path;
-
-            cmd << "-drive file=\""
-                << img_path.string()
-                << "\",format=raw ";
-
-            cmd << "-boot c ";
+            command.insert(command.end(), {
+                "-cdrom", resolve_path(dist, config.boot_path).string(),
+                "-boot", "order=d"
+            });
         }
-
-        cmd << "-netdev user,id=net0 ";
-        cmd << "-device virtio-net-pci,netdev=net0 ";
-        cmd << "-display " << config.display;
-
-        return cmd.str();
     }
+
+    if (config.network_mode == "user") {
+        command.insert(command.end(), {
+            "-netdev", "user,id=net0",
+            "-device", "virtio-net-pci,netdev=net0"
+        });
+    } else {
+        command.insert(command.end(), {"-nic", "none"});
+    }
+
+    command.insert(command.end(), {"-display", config.display});
+    return command;
+}
+
+std::string format_command(const Command& command) {
+    std::ostringstream output;
+
+    for (std::size_t index = 0; index < command.size(); ++index) {
+        if (index != 0) {
+            output << ' ';
+        }
+        output << shell_quote(command[index]);
+    }
+
+    return output.str();
+}
 
 }

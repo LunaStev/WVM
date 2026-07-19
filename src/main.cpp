@@ -1,9 +1,12 @@
 #include "Commands.hpp"
 
+#include <exception>
 #include <iostream>
 #include <string>
 
-int main(int argc, char** argv) {
+namespace {
+
+int run(const int argc, char** argv) {
     if (argc < 2) {
         std::cout << "WVM - Wave Virtual Machine Manager\n";
         std::cout << "Usage:\n";
@@ -11,7 +14,7 @@ int main(int argc, char** argv) {
         std::cout << "  wvm set --dist . --size 64G --memory 4G --cores 4\n";
         std::cout << "  wvm install . --iso os.iso\n";
         std::cout << "  wvm install . --img os.img\n";
-        std::cout << "  wvm run .\n";
+        std::cout << "  wvm run . [--disk | --iso os.iso | --img os.img] [--dry-run]\n";
         return 0;
     }
 
@@ -35,4 +38,15 @@ int main(int argc, char** argv) {
 
     std::cerr << "Unknown command: " << command << std::endl;
     return 1;
+}
+
+}
+
+int main(const int argc, char** argv) {
+    try {
+        return run(argc, argv);
+    } catch (const std::exception& error) {
+        std::cerr << "WVM failed: " << error.what() << '\n';
+        return 1;
+    }
 }

@@ -1,6 +1,6 @@
 # WVM - Wave Virtual Machine Manager
 
-WVM (Wave Virtual Machine Manager) is a lightweight CLI tool designed to simplify the management of QEMU virtual machines. It provides an intuitive interface for initializing, configuring, and running VMs using XML-based configurations.
+WVM (Wave Virtual Machine Manager) is an independent VM client built on top of QEMU/KVM. It manages project-local VM definitions, disks, installation media, and QEMU processes without routing commands through a shell.
 
 ## Features
 
@@ -8,7 +8,9 @@ WVM (Wave Virtual Machine Manager) is a lightweight CLI tool designed to simplif
 - **Simplified CLI**: Easy-to-use commands for common VM operations.
 - **XML Configuration**: Store VM settings in a readable `wvm.xml` file.
 - **Automatic QEMU Command Generation**: Build complex QEMU commands automatically based on your configuration.
-- **KVM Support**: Automatically enables KVM acceleration if `/dev/kvm` is available.
+- **KVM Support**: Enables KVM only for a compatible native architecture when `/dev/kvm` is accessible.
+- **Safe Process Execution**: Passes arguments directly to QEMU instead of evaluating shell command strings.
+- **Dry Runs**: Inspect the exact QEMU invocation without starting or modifying a VM.
 
 ## Prerequisites
 
@@ -65,24 +67,59 @@ Launch the virtual machine using QEMU.
 wvm run
 ```
 
+Boot from the system disk or temporarily preview another source:
+
+```bash
+wvm run . --disk
+wvm run . --iso /path/to/os-installer.iso --dry-run
+wvm run . --img /path/to/boot.img --dry-run
+```
+
 ## Configuration
 
 The configuration is stored in `wvm.xml`. You can manually edit this file to fine-tune your VM settings:
 
 ```xml
-<vm>
-    <name>my-vm</name>
-    <arch>x86_64</arch>
-    <machine>q35</machine>
-    <cpu>host</cpu>
-    <memory>4G</memory>
-    <cores>4</cores>
-    <disk path="disk.qcow2" size="64G" format="qcow2"/>
-    <boot mode="iso" path="os.iso"/>
-    <display>gtk</display>
-    <network mode="user"/>
-</vm>
+<wvm version="1">
+    <machine>
+        <name>my-vm</name>
+        <arch>x86_64</arch>
+        <type>q35</type>
+        <cpu>host</cpu>
+        <memory>4G</memory>
+        <cores>4</cores>
+    </machine>
+    <disk>
+        <path>disk.qcow2</path>
+        <size>64G</size>
+        <format>qcow2</format>
+    </disk>
+    <boot>
+        <mode>iso</mode>
+        <path>os.iso</path>
+    </boot>
+    <display>
+        <type>gtk</type>
+    </display>
+    <network>
+        <mode>user</mode>
+    </network>
+</wvm>
 ```
+
+Supported disk formats are `qcow2` and `raw`. Boot modes are `none`, `disk`, `iso`, and `img`; network modes are `user` and `none`.
+
+## Testing
+
+```bash
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+## Project Direction
+
+WVM uses QEMU/KVM as its virtualization engine and aims to provide its own lifecycle, storage, networking, snapshot, and desktop client experience. QEMU remains the low-level device and CPU emulator; WVM owns the safer and simpler user-facing workflow.
 
 ## License
 

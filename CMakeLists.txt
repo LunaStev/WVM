@@ -12,6 +12,7 @@ add_executable(wvm
     src/Commands.cpp
     src/VMConfig.cpp
     src/QemuCommandBuilder.cpp
+    src/ProcessRunner.cpp
 )
 
 install(
@@ -20,3 +21,18 @@ install(
 )
 
 target_link_libraries(wvm PRIVATE pugixml::pugixml)
+
+include(CTest)
+
+if(BUILD_TESTING)
+    add_executable(wvm_tests
+        tests/WvmTests.cpp
+        src/VMConfig.cpp
+        src/QemuCommandBuilder.cpp
+        src/ProcessRunner.cpp
+    )
+    target_include_directories(wvm_tests PRIVATE src)
+    target_link_libraries(wvm_tests PRIVATE pugixml::pugixml)
+
+    add_test(NAME wvm_tests COMMAND wvm_tests)
+endif()

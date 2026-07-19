@@ -2,8 +2,10 @@
 
 #include <pugixml.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
-#include <fstream>
+#include <initializer_list>
 #include <string>
 
 namespace wvm {
@@ -28,6 +30,55 @@ static int int_or(const pugi::xml_node& node, int fallback) {
     }
 
     return node.text().as_int(fallback);
+}
+
+static bool contains_control_character(const std::string& value) {
+    return std::any_of(value.begin(), value.end(), [](const unsigned char character) {
+        return std::iscntrl(character) != 0;
+    });
+}
+
+static bool is_identifier(const std::string& value) {
+    return !value.empty() && std::all_of(
+        value.begin(),
+        value.end(),
+        [](const unsigned char character) {
+            return std::isalnum(character) != 0 || character == '_' || character == '-';
+        }
+    );
+}
+
+static bool is_resource_size(const std::string& value) {
+    if (value.empty() || value.front() == '0') {
+        return false;
+    }
+
+    std::size_t digits = 0;
+    while (digits < value.size() && std::isdigit(
+        static_cast<unsigned char>(value[digits])
+    ) != 0) {
+        ++digits;
+    }
+
+    if (digits == 0) {
+        return false;
+    }
+
+    if (digits == value.size()) {
+        return true;
+    }
+
+    return digits + 1 == value.size()
+        && std::string("KMGTPE").find(value.back()) != std::string::npos;
+}
+
+static bool is_one_of(
+    const std::string& value,
+    const std::initializer_list<const char*> choices
+) {
+    return std::any_of(choices.begin(), choices.end(), [&](const char* choice) {
+        return value == choice;
+    });
 }
 
 bool save_config(const std::filesystem::path& path, const VMConfig& config) {
@@ -106,6 +157,78 @@ bool load_config(const std::filesystem::path& path, VMConfig& config) {
     config.display = text_or(display.child("type"), "gtk");
     config.network_mode = text_or(network.child("mode"), "user");
 
+    return true;
+}
+
+bool validate_config(const VMConfig& config, std::string& error) {
+    if (config.name.empty() || config.name.size() > 128
+        || contains_control_character(config.name)) {
+        error = "VM name must be 1-128 characters without control characters.";
+        return false;
+    }
+
+    if (!is_identifier(config.arch)) {
+        error = "Architecture may contain only letters, numbers, '_' and '-'.";
+        return false;
+    }
+
+    if (config.machine.empty() || contains_control_character(config.machine)) {
+        error = "Machine type must not be empty or contain control characters.";
+        return false;
+    }
+
+    if (config.cpu.empty() || contains_control_character(config.cpu)) {
+        error = "CPU model must not be empty or contain control characters.";
+        return false;
+    }
+
+    if (!is_resource_size(config.memory)) {
+        error = "Memory must be a positive integer with an optional K/M/G/T/P/E suffix.";
+        return false;
+    }
+
+    if (config.cores < 1 || config.cores > 1024) {
+        error = "CPU core count must be between 1 and 1024.";
+        return false;
+    }
+
+    if (config.disk_path.empty() || contains_control_character(config.disk_path)) {
+        error = "Disk path must not be empty or contain control characters.";
+        return false;
+    }
+
+    if (!is_resource_size(config.disk_size)) {
+        error = "Disk size must be a positive integer with an optional K/M/G/T/P/E suffix.";
+        return false;
+    }
+
+    if (!is_one_of(config.disk_format, {"qcow2", "raw"})) {
+        error = "Disk format must be 'qcow2' or 'raw'.";
+        return false;
+    }
+
+    if (!is_one_of(config.boot_mode, {"none", "disk", "iso", "img"})) {
+        error = "Boot mode must be one of: none, disk, iso, img.";
+        return false;
+    }
+
+    if ((config.boot_mode == "iso" || config.boot_mode == "img")
+        && (config.boot_path.empty() || contains_control_character(config.boot_path))) {
+        error = "ISO and IMG boot modes require a valid boot path.";
+        return false;
+    }
+
+    if (!is_one_of(config.display, {"gtk", "sdl", "curses", "none"})) {
+        error = "Display type must be one of: gtk, sdl, curses, none.";
+        return false;
+    }
+
+    if (!is_one_of(config.network_mode, {"user", "none"})) {
+        error = "Network mode must be 'user' or 'none'.";
+        return false;
+    }
+
+    error.clear();
     return true;
 }
 
