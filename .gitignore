@@ -1,13 +1,27 @@
-out/
-tests/
+# Build outputs
+/build/
+/out/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+.ninja_deps
+.ninja_log
+build.ninja
+
+# Editor settings
 .idea/
 .vscode/
 .lunacode/
 .zed/
 
+# Compiler outputs
 *.o
+
+# Local VM projects and disk media
+/wvm.xml
+/tests/wvm.xml
 *.qcow2
 *.iso
 *.img
-*.xml
-

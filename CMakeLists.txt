@@ -14,4 +14,9 @@ add_executable(wvm
     src/QemuCommandBuilder.cpp
 )
 
+install(
+    TARGETS wvm
+    RUNTIME DESTINATION bin
+)
+
 target_link_libraries(wvm PRIVATE pugixml::pugixml)
