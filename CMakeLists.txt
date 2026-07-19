@@ -26,7 +26,7 @@ install(
 target_link_libraries(wvm PRIVATE pugixml::pugixml)
 
 if(WVM_BUILD_GUI)
-    find_package(Qt6 6.5 COMPONENTS Widgets REQUIRED)
+    find_package(Qt6 6.2 COMPONENTS Widgets REQUIRED)
 
     add_executable(wvm-gui
         src/gui/main.cpp
@@ -75,7 +75,7 @@ set(CPACK_PACKAGE_CONTACT "luna@lunastev.org")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 set(CPACK_GENERATOR "TGZ;DEB;RPM")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "qemu-system-x86, qemu-utils, libqt6widgets6")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "qemu-system-x86, qemu-utils, libqt6widgets6, kmod, acl, pkexec")
 set(CPACK_DEBIAN_PACKAGE_SECTION "admin")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
@@ -84,6 +84,6 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
 endif()
 set(CPACK_RPM_PACKAGE_LICENSE "MPL-2.0")
 set(CPACK_RPM_PACKAGE_GROUP "Applications/System")
-set(CPACK_RPM_PACKAGE_REQUIRES "qemu-system-x86-core, qemu-img, qt6-qtbase-gui")
+set(CPACK_RPM_PACKAGE_REQUIRES "qemu-system-x86-core, qemu-img, qt6-qtbase-gui, kmod, acl, polkit")
 
 include(CPack)

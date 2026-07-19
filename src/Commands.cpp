@@ -7,9 +7,15 @@
 
 #include <charconv>
 #include <filesystem>
+#include <grp.h>
 #include <iostream>
+#include <limits>
 #include <optional>
+#include <pwd.h>
 #include <string>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -79,6 +85,162 @@ bool validate_and_report(const VMConfig& config) {
 
     std::cerr << "Invalid wvm.xml: " << error << "\n";
     return false;
+}
+
+std::string firmware_setting_name(const KvmStatus& status) {
+    if (status.cpu_vendor == "AMD") {
+        return "AMD SVM (sometimes named SVM Mode)";
+    }
+    if (status.cpu_vendor == "Intel") {
+        return "Intel VT-x (sometimes named Intel Virtualization Technology)";
+    }
+    return "CPU virtualization (AMD SVM or Intel VT-x)";
+}
+
+void report_firmware_block(const KvmStatus& status) {
+    std::cerr
+        << "CPU virtualization is disabled by the system firmware.\n"
+        << "Restart the computer, open UEFI/BIOS Setup, enable "
+        << firmware_setting_name(status) << ", save, and boot Linux again.\n"
+        << "This firmware switch cannot be changed by an application.\n";
+}
+
+KvmStatus inspect_native_kvm() {
+    KvmStatus status = inspect_kvm("x86_64");
+    if (status.host_architecture != "x86_64") {
+        status = inspect_kvm(status.host_architecture);
+    }
+    return status;
+}
+
+fs::path current_executable() {
+    std::error_code error;
+    const fs::path executable = fs::read_symlink("/proc/self/exe", error);
+    return error ? fs::path("wvm") : executable;
+}
+
+std::optional<uid_t> parse_uid(const std::string& value) {
+    unsigned long parsed = 0;
+    const char* begin = value.data();
+    const char* end = begin + value.size();
+    const auto result = std::from_chars(begin, end, parsed);
+    if (result.ec != std::errc() || result.ptr != end
+        || parsed > static_cast<unsigned long>(std::numeric_limits<uid_t>::max())) {
+        return std::nullopt;
+    }
+    return static_cast<uid_t>(parsed);
+}
+
+int configure_kvm_as_root(const uid_t target_uid) {
+    if (geteuid() != 0) {
+        std::cerr << "Host setup requires administrator privileges.\n";
+        return 1;
+    }
+
+    KvmStatus status = inspect_native_kvm();
+    if (!status.device_exists) {
+        if (!status.cpu_virtualization) {
+            report_firmware_block(status);
+            return 1;
+        }
+        if (run_process({"modprobe", "kvm"}) != 0) {
+            std::cerr << "Failed to load the KVM kernel module.\n";
+            return 1;
+        }
+
+        const std::string vendor_module = status.cpu_vendor == "AMD"
+            ? "kvm_amd"
+            : status.cpu_vendor == "Intel" ? "kvm_intel" : "";
+        if (!vendor_module.empty() && run_process({"modprobe", vendor_module}) != 0) {
+            std::cerr << "Failed to load " << vendor_module << ".\n";
+            return 1;
+        }
+        status = inspect_native_kvm();
+    }
+    if (!status.device_exists) {
+        std::cerr << "KVM modules loaded, but /dev/kvm was not created.\n";
+        return 1;
+    }
+
+    if (target_uid == 0) {
+        return 0;
+    }
+
+    const passwd* account = getpwuid(target_uid);
+    if (account == nullptr || account->pw_name == nullptr) {
+        std::cerr << "Unable to resolve the desktop user account.\n";
+        return 1;
+    }
+
+    struct stat device_stat {};
+    if (stat("/dev/kvm", &device_stat) == 0) {
+        const group* device_group = getgrgid(device_stat.st_gid);
+        if (device_group != nullptr && device_group->gr_name != nullptr) {
+            const int group_result = run_process({
+                "usermod", "-a", "-G", device_group->gr_name, account->pw_name
+            });
+            if (group_result != 0) {
+                std::cerr << "Warning: could not persist KVM group membership.\n";
+            }
+        }
+    }
+
+    const int acl_result = run_process({
+        "setfacl", "-m", "u:" + std::to_string(target_uid) + ":rw", "/dev/kvm"
+    });
+    if (acl_result != 0) {
+        std::cerr
+            << "KVM is loaded, but immediate device access could not be granted.\n"
+            << "Install the 'acl' package and run WVM again.\n";
+        return 1;
+    }
+
+    std::cout << "KVM host acceleration is ready.\n";
+    return 0;
+}
+
+int request_kvm_host_setup() {
+    const uid_t target_uid = getuid();
+    if (geteuid() == 0) {
+        return configure_kvm_as_root(target_uid);
+    }
+
+    std::cout << "WVM is preparing KVM acceleration (administrator approval required).\n";
+    return run_process({
+        "pkexec",
+        current_executable().string(),
+        "host-setup",
+        "--privileged",
+        "--uid",
+        std::to_string(target_uid)
+    });
+}
+
+bool ensure_kvm_for_run(const std::string& guest_architecture) {
+    KvmStatus status = inspect_kvm(guest_architecture);
+    if (!status.native_architecture) {
+        std::cerr << "WVM currently requires a native guest architecture for hardware acceleration.\n";
+        return false;
+    }
+    if (status.available()) {
+        return true;
+    }
+    if (!status.device_exists && !status.cpu_virtualization) {
+        report_firmware_block(status);
+        return false;
+    }
+
+    if (request_kvm_host_setup() != 0) {
+        std::cerr << "WVM could not configure KVM automatically.\n";
+        return false;
+    }
+
+    status = inspect_kvm(guest_architecture);
+    if (!status.available()) {
+        std::cerr << "KVM setup completed, but /dev/kvm is still unavailable.\n";
+        return false;
+    }
+    return true;
 }
 
 bool boot_source_exists(const fs::path& dist, const VMConfig& config) {
@@ -351,14 +513,7 @@ int command_run(const int argc, char** argv) {
         std::cerr << socket_error << "\n";
         return 1;
     }
-    const KvmStatus kvm = inspect_kvm(config.arch);
-    if (!kvm.native_architecture) {
-        std::cerr << "WVM currently requires a native guest architecture for hardware acceleration.\n";
-        return 1;
-    }
-    if (!kvm.available()) {
-        std::cerr << "KVM hardware acceleration is required. Run 'wvm doctor "
-                  << dist.string() << "' for details.\n";
+    if (!ensure_kvm_for_run(config.arch)) {
         return 1;
     }
 
@@ -472,6 +627,7 @@ int command_doctor(const int argc, char** argv) {
         ? "KVM" : "unavailable (KVM required)";
 
     std::cout << "Host architecture: " << status.host_architecture << "\n"
+              << "CPU vendor: " << status.cpu_vendor << "\n"
               << "Guest architecture: " << config.arch << "\n"
               << "Configured acceleration: " << config.acceleration << "\n"
               << "Native architecture: " << (status.native_architecture ? "yes" : "no") << "\n"
@@ -487,14 +643,42 @@ int command_doctor(const int argc, char** argv) {
         return 0;
     }
     if (!status.cpu_virtualization && !status.available()) {
-        std::cout << "Enable AMD SVM or Intel VT-x in the system firmware.\n";
+        std::cout << "Required firmware setting: "
+                  << firmware_setting_name(status) << "\n";
     }
-    if (!status.device_exists) {
-        std::cout << "Load the kvm and vendor KVM kernel modules, then verify /dev/kvm.\n";
-    } else if (!status.device_accessible) {
-        std::cout << "Grant this user access to /dev/kvm (normally through the kvm group).\n";
+    if (status.cpu_virtualization && !status.device_exists) {
+        std::cout << "WVM will load the required KVM modules automatically on Power On.\n";
+    } else if (status.device_exists && !status.device_accessible) {
+        std::cout << "WVM will request /dev/kvm access automatically on Power On.\n";
     }
     return status.available() ? 0 : 1;
+}
+
+int command_host_setup(const int argc, char** argv) {
+    if (has_arg(argc, argv, "--privileged")) {
+        if (option_is_missing_value(argc, argv, "--uid")) {
+            std::cerr << "The privileged setup request is missing its user ID.\n";
+            return 2;
+        }
+        const auto uid_value = get_arg_value(argc, argv, "--uid");
+        const auto target_uid = uid_value ? parse_uid(*uid_value) : std::nullopt;
+        if (!target_uid) {
+            std::cerr << "Invalid user ID for privileged host setup.\n";
+            return 2;
+        }
+        return configure_kvm_as_root(*target_uid);
+    }
+
+    const KvmStatus status = inspect_native_kvm();
+    if (status.available()) {
+        std::cout << "KVM host acceleration is already ready.\n";
+        return 0;
+    }
+    if (!status.device_exists && !status.cpu_virtualization) {
+        report_firmware_block(status);
+        return 1;
+    }
+    return request_kvm_host_setup();
 }
 
 }

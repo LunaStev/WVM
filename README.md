@@ -8,7 +8,7 @@ WVM (Wave Virtual Machine Manager) is an independent VM client built on top of Q
 - **Simplified CLI**: Easy-to-use commands for common VM operations.
 - **XML Configuration**: Store VM settings in a readable `wvm.xml` file.
 - **Automatic QEMU Command Generation**: Build complex QEMU commands automatically based on your configuration.
-- **KVM Support**: Enables KVM only for a compatible native architecture when `/dev/kvm` is accessible.
+- **Automatic KVM Setup**: Loads KVM modules and grants the desktop user device access on first launch through the system authorization dialog.
 - **Safe Process Execution**: Passes arguments directly to QEMU instead of evaluating shell command strings.
 - **Dry Runs**: Inspect the exact QEMU invocation without starting or modifying a VM.
 - **QMP Lifecycle Control**: Query, shut down, force-stop, and reset a running QEMU VM through its management socket.
@@ -22,7 +22,7 @@ To build and run WVM, you need:
 - **CMake** (version 3.20 or higher)
 - **C++20 Compiler** (e.g., GCC 10+, Clang 10+)
 - **pugixml** library
-- **Qt 6.5+ Widgets** development files for the desktop client
+- **Qt 6.2+ Widgets** development files for the desktop client
 - **QEMU** (specifically the `qemu-system-*` binaries and `qemu-img` for disk management)
 
 ## Building
@@ -74,7 +74,9 @@ WVM applies KVM, VirtIO block, VirtIO networking, and VirtIO graphics automatica
 wvm doctor .
 ```
 
-For a native guest, `/dev/kvm` must exist and be accessible. If `wvm doctor` reports that the CPU virtualization flag is missing, enable AMD SVM or Intel VT-x in the system firmware. If the flag exists but `/dev/kvm` does not, load `kvm_amd` or `kvm_intel`; if access is denied, add the user to the `kvm` group and log in again. WVM refuses to silently launch a slow native guest through TCG.
+For a native guest, WVM prepares the KVM kernel modules and `/dev/kvm` access automatically when the VM is powered on. The operating system may show one administrator authorization prompt. If the CPU virtualization flag itself is missing, WVM gives the exact AMD SVM or Intel VT-x firmware setting to enable; firmware is the only layer an application cannot change. WVM refuses to silently launch a slow native guest through TCG.
+
+`wvm host-setup` can be used to perform the same automatic host preparation before starting a VM.
 
 ### 3. Set installation source
 Specify an ISO or disk image for installation. ISO media is used for the first boot only; an installer reboot returns to the VM disk, and a successfully completed QEMU session switches future launches to disk mode.

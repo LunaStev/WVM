@@ -9,6 +9,8 @@ class QLineEdit;
 class QPlainTextEdit;
 class QSpinBox;
 class QComboBox;
+class QTreeWidget;
+class QTreeWidgetItem;
 
 class MainWindow final : public QMainWindow {
 public:
@@ -28,6 +30,7 @@ private:
     void sendControlCommand(const QString& command, const QString& label);
     void refreshStatus();
     void loadProjectSettings();
+    void updateProjectPresentation();
     void runDoctor(const Completion& completion = {});
     void runCommand(
         const QStringList& arguments,
@@ -43,4 +46,6 @@ private:
     QComboBox* memory_ = nullptr;
     QComboBox* diskSize_ = nullptr;
     QPlainTextEdit* log_ = nullptr;
+    QTreeWidget* library_ = nullptr;
+    QTreeWidgetItem* currentVmItem_ = nullptr;
 };

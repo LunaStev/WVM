@@ -9,4 +9,5 @@ namespace wvm {
     int command_stop(int argc, char** argv);
     int command_reboot(int argc, char** argv);
     int command_doctor(int argc, char** argv);
+    int command_host_setup(int argc, char** argv);
 }
