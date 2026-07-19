@@ -96,6 +96,7 @@ bool save_config(const std::filesystem::path& path, const VMConfig& config) {
     machine.append_child("arch").text().set(config.arch.c_str());
     machine.append_child("type").text().set(config.machine.c_str());
     machine.append_child("cpu").text().set(config.cpu.c_str());
+    machine.append_child("acceleration").text().set(config.acceleration.c_str());
     machine.append_child("memory").text().set(config.memory.c_str());
     machine.append_child("cores").text().set(config.cores);
 
@@ -103,6 +104,7 @@ bool save_config(const std::filesystem::path& path, const VMConfig& config) {
     disk.append_child("path").text().set(config.disk_path.c_str());
     disk.append_child("size").text().set(config.disk_size.c_str());
     disk.append_child("format").text().set(config.disk_format.c_str());
+    disk.append_child("interface").text().set(config.disk_interface.c_str());
 
     auto boot = root.append_child("boot");
     boot.append_child("mode").text().set(config.boot_mode.c_str());
@@ -110,6 +112,7 @@ bool save_config(const std::filesystem::path& path, const VMConfig& config) {
 
     auto display = root.append_child("display");
     display.append_child("type").text().set(config.display.c_str());
+    display.append_child("graphics").text().set(config.graphics.c_str());
 
     auto network = root.append_child("network");
     network.append_child("mode").text().set(config.network_mode.c_str());
@@ -144,17 +147,20 @@ bool load_config(const std::filesystem::path& path, VMConfig& config) {
     config.arch = text_or(machine.child("arch"), "x86_64");
     config.machine = text_or(machine.child("type"), "q35");
     config.cpu = text_or(machine.child("cpu"), "host");
+    config.acceleration = text_or(machine.child("acceleration"), "kvm");
     config.memory = text_or(machine.child("memory"), "4G");
     config.cores = int_or(machine.child("cores"), 4);
 
     config.disk_path = text_or(disk.child("path"), "disk.qcow2");
     config.disk_size = text_or(disk.child("size"), "64G");
     config.disk_format = text_or(disk.child("format"), "qcow2");
+    config.disk_interface = text_or(disk.child("interface"), "virtio");
 
     config.boot_mode = text_or(boot.child("mode"), "none");
     config.boot_path = text_or(boot.child("path"), "");
 
     config.display = text_or(display.child("type"), "gtk");
+    config.graphics = text_or(display.child("graphics"), "virtio");
     config.network_mode = text_or(network.child("mode"), "user");
 
     return true;
@@ -179,6 +185,11 @@ bool validate_config(const VMConfig& config, std::string& error) {
 
     if (config.cpu.empty() || contains_control_character(config.cpu)) {
         error = "CPU model must not be empty or contain control characters.";
+        return false;
+    }
+
+    if (!is_one_of(config.acceleration, {"auto", "kvm", "tcg"})) {
+        error = "Acceleration must be one of: auto, kvm, tcg.";
         return false;
     }
 
@@ -207,6 +218,11 @@ bool validate_config(const VMConfig& config, std::string& error) {
         return false;
     }
 
+    if (!is_one_of(config.disk_interface, {"virtio", "ide"})) {
+        error = "Disk interface must be 'virtio' or 'ide'.";
+        return false;
+    }
+
     if (!is_one_of(config.boot_mode, {"none", "disk", "iso", "img"})) {
         error = "Boot mode must be one of: none, disk, iso, img.";
         return false;
@@ -220,6 +236,11 @@ bool validate_config(const VMConfig& config, std::string& error) {
 
     if (!is_one_of(config.display, {"gtk", "sdl", "curses", "none"})) {
         error = "Display type must be one of: gtk, sdl, curses, none.";
+        return false;
+    }
+
+    if (!is_one_of(config.graphics, {"virtio", "std"})) {
+        error = "Graphics adapter must be 'virtio' or 'std'.";
         return false;
     }
 

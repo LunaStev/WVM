@@ -18,6 +18,7 @@ int run(const int argc, char** argv) {
         std::cout << "  wvm status .\n";
         std::cout << "  wvm stop . [--force]\n";
         std::cout << "  wvm reboot .\n";
+        std::cout << "  wvm doctor .\n";
         return 0;
     }
 
@@ -49,6 +50,10 @@ int run(const int argc, char** argv) {
 
     if (command == "reboot") {
         return wvm::command_reboot(argc, argv);
+    }
+
+    if (command == "doctor") {
+        return wvm::command_doctor(argc, argv);
     }
 
     std::cerr << "Unknown command: " << command << std::endl;

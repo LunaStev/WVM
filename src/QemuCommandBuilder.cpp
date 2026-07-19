@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <sstream>
 #include <string_view>
-#include <unistd.h>
 
 namespace wvm {
 
@@ -54,57 +53,51 @@ std::string shell_quote(std::string_view argument) {
 void append_drive(
     Command& command,
     const std::filesystem::path& path,
-    const std::string& format
+    const std::string& format,
+    const std::string& interface
 ) {
     command.emplace_back("-drive");
     command.emplace_back(
         "file=" + escape_drive_value(path) + ",format=" + format
+            + ",if=" + interface
     );
 }
 
-}
-
-bool kvm_available(const std::string& guest_architecture) {
-#if defined(__x86_64__)
-    const bool native_architecture = guest_architecture == "x86_64";
-#elif defined(__aarch64__)
-    const bool native_architecture = guest_architecture == "aarch64";
-#else
-    const bool native_architecture = false;
-#endif
-
-    return native_architecture && access("/dev/kvm", R_OK | W_OK) == 0;
 }
 
 Command build_qemu_command(
     const std::filesystem::path& dist,
     const VMConfig& config,
     const bool enable_kvm,
-    const std::optional<std::filesystem::path>& qmp_socket
+    const std::optional<std::filesystem::path>& qmp_socket,
+    const bool enable_gpu_acceleration
 ) {
     Command command = {
         "qemu-system-" + config.arch,
         "-name", config.name,
         "-machine", config.machine,
+        "-accel", enable_kvm ? "kvm" : "tcg,thread=multi",
         "-cpu", enable_kvm ? config.cpu : "max",
         "-m", config.memory,
-        "-smp", std::to_string(config.cores)
+        "-smp", "cpus=" + std::to_string(config.cores)
+            + ",sockets=1,cores=" + std::to_string(config.cores) + ",threads=1"
     };
-
-    if (enable_kvm) {
-        command.emplace(command.begin() + 5, "-enable-kvm");
-    }
 
     const auto disk_path = resolve_path(dist, config.disk_path);
 
     // Raw boot images must be enumerated before the persistent system disk so
     // legacy BIOS boot order=c selects the requested image.
     if (config.boot_mode == "img") {
-        append_drive(command, resolve_path(dist, config.boot_path), "raw");
-        append_drive(command, disk_path, config.disk_format);
+        append_drive(
+            command,
+            resolve_path(dist, config.boot_path),
+            "raw",
+            config.disk_interface
+        );
+        append_drive(command, disk_path, config.disk_format, config.disk_interface);
         command.insert(command.end(), {"-boot", "order=c"});
     } else {
-        append_drive(command, disk_path, config.disk_format);
+        append_drive(command, disk_path, config.disk_format, config.disk_interface);
 
         if (config.boot_mode == "disk") {
             command.insert(command.end(), {"-boot", "order=c"});
@@ -132,7 +125,16 @@ Command build_qemu_command(
         });
     }
 
-    command.insert(command.end(), {"-display", config.display});
+    if (enable_gpu_acceleration
+        && (config.display == "gtk" || config.display == "sdl")) {
+        command.insert(command.end(), {"-device", "virtio-vga-gl"});
+        command.insert(command.end(), {"-display", config.display + ",gl=on"});
+    } else {
+        command.insert(command.end(), {
+            "-vga", config.display == "none" ? "none" : config.graphics
+        });
+        command.insert(command.end(), {"-display", config.display});
+    }
     return command;
 }
 

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Wave Virtual Machine Manager
+GenericName=Virtual Machine Manager
+Comment=Create and run fast QEMU/KVM virtual machines
+Exec=wvm-gui
+Icon=wvm
+Terminal=false
+Categories=System;Emulator;
+Keywords=virtual machine;qemu;kvm;vm;

@@ -1,4 +1,5 @@
 #include "Commands.hpp"
+#include "HostCapabilities.hpp"
 #include "ProcessRunner.hpp"
 #include "QmpClient.hpp"
 #include "QemuCommandBuilder.hpp"
@@ -350,11 +351,23 @@ int command_run(const int argc, char** argv) {
         std::cerr << socket_error << "\n";
         return 1;
     }
+    const KvmStatus kvm = inspect_kvm(config.arch);
+    if (!kvm.native_architecture) {
+        std::cerr << "WVM currently requires a native guest architecture for hardware acceleration.\n";
+        return 1;
+    }
+    if (!kvm.available()) {
+        std::cerr << "KVM hardware acceleration is required. Run 'wvm doctor "
+                  << dist.string() << "' for details.\n";
+        return 1;
+    }
+
     const Command command = build_qemu_command(
         dist,
         config,
-        kvm_available(config.arch),
-        socket_path
+        true,
+        socket_path,
+        gpu_acceleration_available()
     );
 
     std::cout << format_command(command) << std::endl;
@@ -442,6 +455,46 @@ int command_reboot(const int argc, char** argv) {
 
     std::cout << "Reset requested.\n";
     return 0;
+}
+
+int command_doctor(const int argc, char** argv) {
+    const fs::path dist = command_dist(argc, argv);
+    VMConfig config;
+    const fs::path config_path = dist / "wvm.xml";
+    if (fs::exists(config_path) && !load_config(config_path, config)) {
+        std::cerr << "Failed to load wvm.xml.\n";
+        return 1;
+    }
+
+    const KvmStatus status = inspect_kvm(config.arch);
+    const bool gpu_acceleration = gpu_acceleration_available();
+    const std::string effective_acceleration = status.available()
+        ? "KVM" : "unavailable (KVM required)";
+
+    std::cout << "Host architecture: " << status.host_architecture << "\n"
+              << "Guest architecture: " << config.arch << "\n"
+              << "Configured acceleration: " << config.acceleration << "\n"
+              << "Native architecture: " << (status.native_architecture ? "yes" : "no") << "\n"
+              << "CPU virtualization flag: " << (status.cpu_virtualization ? "yes" : "no") << "\n"
+              << "/dev/kvm present: " << (status.device_exists ? "yes" : "no") << "\n"
+              << "/dev/kvm accessible: " << (status.device_accessible ? "yes" : "no") << "\n"
+              << "Effective acceleration: " << effective_acceleration << "\n"
+              << "GPU render node: " << (gpu_acceleration ? "yes" : "no") << "\n"
+              << "Graphics path: " << (gpu_acceleration ? "VirtIO GL" : "VirtIO 2D") << "\n";
+
+    if (!status.native_architecture) {
+        std::cout << "Cross-architecture guests require software emulation.\n";
+        return 0;
+    }
+    if (!status.cpu_virtualization && !status.available()) {
+        std::cout << "Enable AMD SVM or Intel VT-x in the system firmware.\n";
+    }
+    if (!status.device_exists) {
+        std::cout << "Load the kvm and vendor KVM kernel modules, then verify /dev/kvm.\n";
+    } else if (!status.device_accessible) {
+        std::cout << "Grant this user access to /dev/kvm (normally through the kvm group).\n";
+    }
+    return status.available() ? 0 : 1;
 }
 
 }

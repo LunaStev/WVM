@@ -58,6 +58,10 @@ void test_config_validation() {
     config = wvm::VMConfig{};
     config.network_mode = "bridge";
     expect(!wvm::validate_config(config, error), "unsupported network mode is rejected");
+
+    config = wvm::VMConfig{};
+    config.acceleration = "unsafe";
+    expect(!wvm::validate_config(config, error), "unsupported acceleration is rejected");
 }
 
 void test_iso_command() {
@@ -73,6 +77,7 @@ void test_iso_command() {
     );
     expect(command.front() == "qemu-system-x86_64", "QEMU binary is selected by arch");
     expect(find_argument(command, "-enable-kvm") == command.size(), "KVM is optional");
+    expect(find_argument(command, "tcg,thread=multi") < command.size(), "TCG uses MTTCG");
     expect(
         find_argument(command, "/vm root/installer image.iso") < command.size(),
         "ISO path remains one process argument"
@@ -83,6 +88,11 @@ void test_iso_command() {
     );
     expect(find_argument(command, "-netdev") < command.size(), "user network is enabled");
     expect(find_argument(command, "-qmp") < command.size(), "QMP control is enabled");
+    expect(find_argument(command, "virtio") < command.size(), "VirtIO VGA is the default");
+    expect(
+        find_argument_containing(command, ",if=virtio") < command.size(),
+        "VirtIO block is the default"
+    );
 }
 
 void test_img_boot_order_and_drive_escaping() {
@@ -118,6 +128,17 @@ void test_logging_and_process_status() {
     );
 }
 
+void test_legacy_config_compatibility() {
+    wvm::VMConfig config;
+    expect(
+        wvm::load_config("tests/LegacyConfig.xml", config),
+        "legacy config fixture loads"
+    );
+    expect(config.disk_interface == "virtio", "legacy disks upgrade to VirtIO");
+    expect(config.graphics == "virtio", "legacy graphics upgrade to VirtIO");
+    expect(config.acceleration == "kvm", "legacy acceleration upgrades to KVM");
+}
+
 }
 
 int main() {
@@ -125,6 +146,7 @@ int main() {
     test_iso_command();
     test_img_boot_order_and_drive_escaping();
     test_logging_and_process_status();
+    test_legacy_config_compatibility();
 
     if (failures != 0) {
         std::cerr << failures << " test(s) failed.\n";

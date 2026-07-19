@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wvm version="1">
+    <machine>
+        <name>legacy-vm</name>
+        <arch>x86_64</arch>
+        <type>q35</type>
+        <cpu>host</cpu>
+        <memory>4G</memory>
+        <cores>4</cores>
+    </machine>
+    <disk>
+        <path>disk.qcow2</path>
+        <size>64G</size>
+        <format>qcow2</format>
+    </disk>
+    <boot>
+        <mode>disk</mode>
+        <path></path>
+    </boot>
+    <display>
+        <type>gtk</type>
+    </display>
+    <network>
+        <mode>user</mode>
+    </network>
+</wvm>
