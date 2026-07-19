@@ -1,17 +1,20 @@
 #include "QemuCommandBuilder.hpp"
 
-#include <sstream>
 #include <filesystem>
+#include <sstream>
 
 namespace wvm {
 
-    std::string build_qemu_command(const std::filesystem::path& dist, const VMConfig& config) {
+    std::string build_qemu_command(
+        const std::filesystem::path& dist,
+        const VMConfig& config
+    ) {
         std::stringstream cmd;
 
         cmd << "qemu-system-" << config.arch << " ";
         cmd << "-machine " << config.machine << " ";
 
-        bool has_kvm = std::filesystem::exists("/dev/kvm");
+        const bool has_kvm = std::filesystem::exists("/dev/kvm");
 
         if (has_kvm) {
             cmd << "-enable-kvm ";
@@ -23,23 +26,19 @@ namespace wvm {
         cmd << "-m " << config.memory << " ";
         cmd << "-smp " << config.cores << " ";
 
-        auto disk_path = dist / config.disk_path;
+        const auto disk_path = dist / config.disk_path;
 
-        cmd << "-drive file=\"" << disk_path.string() << "\",format=" << config.disk_format << " ";
+        // VM의 기본 설치/시스템 디스크는 한 번만 추가한다.
+        cmd << "-drive file=\""
+            << disk_path.string()
+            << "\",format=" << config.disk_format << " ";
 
         if (config.boot_mode == "disk") {
-            auto boot_disk_path = dist / config.boot_path;
-
-            cmd << "-drive file=\""
-                << boot_disk_path.string()
-                << "\",format=" << config.disk_format << " ";
+            cmd << "-boot c ";
         } else if (config.boot_mode == "iso") {
-            auto disk_path = dist / config.disk_path;
-            auto iso_path = dist / config.boot_path;
-
-            cmd << "-drive file=\""
-                << disk_path.string()
-                << "\",format=" << config.disk_format << " ";
+            const auto iso_path = std::filesystem::path(config.boot_path).is_absolute()
+                ? std::filesystem::path(config.boot_path)
+                : dist / config.boot_path;
 
             cmd << "-cdrom \""
                 << iso_path.string()
@@ -47,17 +46,15 @@ namespace wvm {
 
             cmd << "-boot d ";
         } else if (config.boot_mode == "img") {
-            auto img_path = dist / config.boot_path;
+            const auto img_path = std::filesystem::path(config.boot_path).is_absolute()
+                ? std::filesystem::path(config.boot_path)
+                : dist / config.boot_path;
 
             cmd << "-drive file=\""
                 << img_path.string()
                 << "\",format=raw ";
-        } else {
-            auto disk_path = dist / config.disk_path;
 
-            cmd << "-drive file=\""
-                << disk_path.string()
-                << "\",format=" << config.disk_format << " ";
+            cmd << "-boot c ";
         }
 
         cmd << "-netdev user,id=net0 ";
