@@ -3,6 +3,7 @@
 #include "VMConfig.hpp"
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,7 +14,8 @@ namespace wvm {
     Command build_qemu_command(
         const std::filesystem::path& dist,
         const VMConfig& config,
-        bool enable_kvm
+        bool enable_kvm,
+        const std::optional<std::filesystem::path>& qmp_socket = std::nullopt
     );
     std::string format_command(const Command& command);
 }

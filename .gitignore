@@ -20,6 +20,8 @@ build.ninja
 *.o
 
 # Local VM projects and disk media
+/.wvm/
+/tests/.wvm/
 /wvm.xml
 /tests/wvm.xml
 *.qcow2

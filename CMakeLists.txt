@@ -13,6 +13,7 @@ add_executable(wvm
     src/VMConfig.cpp
     src/QemuCommandBuilder.cpp
     src/ProcessRunner.cpp
+    src/QmpClient.cpp
 )
 
 install(
@@ -30,6 +31,7 @@ if(BUILD_TESTING)
         src/VMConfig.cpp
         src/QemuCommandBuilder.cpp
         src/ProcessRunner.cpp
+        src/QmpClient.cpp
     )
     target_include_directories(wvm_tests PRIVATE src)
     target_link_libraries(wvm_tests PRIVATE pugixml::pugixml)

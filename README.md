@@ -11,6 +11,7 @@ WVM (Wave Virtual Machine Manager) is an independent VM client built on top of Q
 - **KVM Support**: Enables KVM only for a compatible native architecture when `/dev/kvm` is accessible.
 - **Safe Process Execution**: Passes arguments directly to QEMU instead of evaluating shell command strings.
 - **Dry Runs**: Inspect the exact QEMU invocation without starting or modifying a VM.
+- **QMP Lifecycle Control**: Query, shut down, force-stop, and reset a running QEMU VM through its management socket.
 
 ## Prerequisites
 
@@ -56,7 +57,7 @@ wvm set --size 64G --memory 4G --cores 4
 ```
 
 ### 3. Set installation source
-Specify an ISO or disk image for installation.
+Specify an ISO or disk image for installation. ISO media is used for the first boot only; an installer reboot returns to the VM disk, and a successfully completed QEMU session switches future launches to disk mode.
 ```bash
 wvm install . --iso /path/to/os-installer.iso
 ```
@@ -74,6 +75,21 @@ wvm run . --disk
 wvm run . --iso /path/to/os-installer.iso --dry-run
 wvm run . --img /path/to/boot.img --dry-run
 ```
+
+If QEMU was killed and left a stale `.wvm/qmp.sock`, first confirm that no VM process is running and then use `wvm run . --recover` to remove only that stale runtime socket.
+
+### 5. Control a running VM
+
+While `wvm run` owns the foreground QEMU process, another terminal can control it through QMP:
+
+```bash
+wvm status .
+wvm reboot .
+wvm stop .
+wvm stop . --force
+```
+
+`stop` requests an ACPI shutdown from the guest. `--force` sends QEMU's immediate `quit` command.
 
 ## Configuration
 
@@ -120,6 +136,8 @@ ctest --test-dir build --output-on-failure
 ## Project Direction
 
 WVM uses QEMU/KVM as its virtualization engine and aims to provide its own lifecycle, storage, networking, snapshot, and desktop client experience. QEMU remains the low-level device and CPU emulator; WVM owns the safer and simpler user-facing workflow.
+
+QEMU is not vendored or evaluated through a shell. WVM launches the installed `qemu-system-*` executable with an argument vector and exposes a project-local `.wvm/qmp.sock` using the official [QEMU Machine Protocol](https://www.qemu.org/docs/master/interop/qmp-spec.html). This keeps QEMU replaceable while giving WVM direct programmatic control over each VM.
 
 ## License
 

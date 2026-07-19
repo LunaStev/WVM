@@ -79,7 +79,8 @@ bool kvm_available(const std::string& guest_architecture) {
 Command build_qemu_command(
     const std::filesystem::path& dist,
     const VMConfig& config,
-    const bool enable_kvm
+    const bool enable_kvm,
+    const std::optional<std::filesystem::path>& qmp_socket
 ) {
     Command command = {
         "qemu-system-" + config.arch,
@@ -110,7 +111,7 @@ Command build_qemu_command(
         } else if (config.boot_mode == "iso") {
             command.insert(command.end(), {
                 "-cdrom", resolve_path(dist, config.boot_path).string(),
-                "-boot", "order=d"
+                "-boot", "order=c,once=d"
             });
         }
     }
@@ -122,6 +123,13 @@ Command build_qemu_command(
         });
     } else {
         command.insert(command.end(), {"-nic", "none"});
+    }
+
+    if (qmp_socket) {
+        command.insert(command.end(), {
+            "-qmp",
+            "unix:" + escape_drive_value(*qmp_socket) + ",server=on,wait=off"
+        });
     }
 
     command.insert(command.end(), {"-display", config.display});

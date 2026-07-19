@@ -3,7 +3,6 @@
 #include "VMConfig.hpp"
 
 #include <algorithm>
-#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -66,15 +65,24 @@ void test_iso_command() {
     config.boot_mode = "iso";
     config.boot_path = "installer image.iso";
 
-    const auto command = wvm::build_qemu_command("/vm root", config, false);
+    const auto command = wvm::build_qemu_command(
+        "/vm root",
+        config,
+        false,
+        "/vm root/.wvm/qmp.sock"
+    );
     expect(command.front() == "qemu-system-x86_64", "QEMU binary is selected by arch");
     expect(find_argument(command, "-enable-kvm") == command.size(), "KVM is optional");
     expect(
         find_argument(command, "/vm root/installer image.iso") < command.size(),
         "ISO path remains one process argument"
     );
-    expect(find_argument(command, "order=d") < command.size(), "ISO boots first");
+    expect(
+        find_argument(command, "order=c,once=d") < command.size(),
+        "ISO boots once before returning to disk"
+    );
     expect(find_argument(command, "-netdev") < command.size(), "user network is enabled");
+    expect(find_argument(command, "-qmp") < command.size(), "QMP control is enabled");
 }
 
 void test_img_boot_order_and_drive_escaping() {

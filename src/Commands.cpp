@@ -1,5 +1,6 @@
 #include "Commands.hpp"
 #include "ProcessRunner.hpp"
+#include "QmpClient.hpp"
 #include "QemuCommandBuilder.hpp"
 #include "VMConfig.hpp"
 
@@ -92,6 +93,62 @@ bool boot_source_exists(const fs::path& dist, const VMConfig& config) {
     std::cerr << "Boot source does not exist or is not a regular file: "
               << boot_path << "\n";
     return false;
+}
+
+fs::path command_dist(const int argc, char** argv) {
+    if (argc >= 3 && !std::string(argv[2]).starts_with("--")) {
+        return argv[2];
+    }
+    return ".";
+}
+
+fs::path qmp_socket_path(const fs::path& dist) {
+    return fs::absolute(dist) / ".wvm" / "qmp.sock";
+}
+
+bool execute_qmp_command(
+    const fs::path& dist,
+    const std::string& command,
+    std::string& response
+) {
+    const fs::path socket_path = qmp_socket_path(dist);
+    if (!fs::exists(socket_path)) {
+        std::cerr << "VM is not running (QMP socket not found).\n";
+        return false;
+    }
+
+    QmpClient client;
+    std::string error;
+    if (!client.connect(socket_path, error)
+        || !client.execute(command, response, error)) {
+        std::cerr << error << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+std::string qmp_status_value(const std::string& response) {
+    const std::string key = "\"status\"";
+    const std::size_t key_position = response.find(key);
+    if (key_position == std::string::npos) {
+        return "unknown";
+    }
+
+    const std::size_t colon = response.find(':', key_position + key.size());
+    if (colon == std::string::npos) {
+        return "unknown";
+    }
+    const std::size_t opening_quote = response.find('"', colon + 1);
+    if (opening_quote == std::string::npos) {
+        return "unknown";
+    }
+    const std::size_t closing_quote = response.find('"', opening_quote + 1);
+    if (closing_quote == std::string::npos) {
+        return "unknown";
+    }
+
+    return response.substr(opening_quote + 1, closing_quote - opening_quote - 1);
 }
 
 }
@@ -233,10 +290,7 @@ int command_install(const int argc, char** argv) {
 }
 
 int command_run(const int argc, char** argv) {
-    fs::path dist = ".";
-    if (argc >= 3 && !std::string(argv[2]).starts_with("--")) {
-        dist = argv[2];
-    }
+    const fs::path dist = command_dist(argc, argv);
 
     if (option_is_missing_value(argc, argv, "--iso")
         || option_is_missing_value(argc, argv, "--img")) {
@@ -290,10 +344,17 @@ int command_run(const int argc, char** argv) {
         return 1;
     }
 
+    const fs::path socket_path = qmp_socket_path(dist);
+    std::string socket_error;
+    if (!validate_qmp_socket_path(socket_path, socket_error)) {
+        std::cerr << socket_error << "\n";
+        return 1;
+    }
     const Command command = build_qemu_command(
         dist,
         config,
-        kvm_available(config.arch)
+        kvm_available(config.arch),
+        socket_path
     );
 
     std::cout << format_command(command) << std::endl;
@@ -301,7 +362,86 @@ int command_run(const int argc, char** argv) {
         return 0;
     }
 
-    return run_process(command);
+    fs::create_directories(socket_path.parent_path());
+    if (fs::exists(socket_path)) {
+        QmpClient existing_client;
+        std::string error;
+        if (existing_client.connect(socket_path, error)) {
+            std::cerr << "VM is already running: " << socket_path << "\n";
+            return 1;
+        }
+
+        if (!has_arg(argc, argv, "--recover")) {
+            std::cerr << "QMP socket exists but is unreachable: " << socket_path
+                      << "\nUse --recover only after confirming no QEMU process is running.\n";
+            return 1;
+        }
+
+        std::error_code remove_error;
+        fs::remove(socket_path, remove_error);
+        if (remove_error) {
+            std::cerr << "Failed to remove stale QMP socket: "
+                      << remove_error.message() << "\n";
+            return 1;
+        }
+    }
+
+    const int result = run_process(command);
+
+    std::error_code cleanup_error;
+    fs::remove(socket_path, cleanup_error);
+
+    if (result == 0 && config.boot_mode == "iso") {
+        config.boot_mode = "disk";
+        config.boot_path.clear();
+        if (!save_config(config_path, config)) {
+            std::cerr << "VM stopped, but failed to switch future boots to disk.\n";
+            return 1;
+        }
+        std::cout << "Installation media consumed; future boots will use the VM disk.\n";
+    }
+
+    return result;
+}
+
+int command_status(const int argc, char** argv) {
+    const fs::path dist = command_dist(argc, argv);
+    const fs::path socket_path = qmp_socket_path(dist);
+    if (!fs::exists(socket_path)) {
+        std::cout << "stopped\n";
+        return 0;
+    }
+
+    std::string response;
+    if (!execute_qmp_command(dist, "query-status", response)) {
+        return 1;
+    }
+
+    std::cout << qmp_status_value(response) << "\n";
+    return 0;
+}
+
+int command_stop(const int argc, char** argv) {
+    const fs::path dist = command_dist(argc, argv);
+    const bool force = has_arg(argc, argv, "--force");
+    std::string response;
+    if (!execute_qmp_command(dist, force ? "quit" : "system_powerdown", response)) {
+        return 1;
+    }
+
+    std::cout << (force ? "Forced stop requested.\n" : "Graceful shutdown requested.\n");
+    return 0;
+}
+
+int command_reboot(const int argc, char** argv) {
+    const fs::path dist = command_dist(argc, argv);
+    std::string response;
+    if (!execute_qmp_command(dist, "system_reset", response)) {
+        return 1;
+    }
+
+    std::cout << "Reset requested.\n";
+    return 0;
 }
 
 }

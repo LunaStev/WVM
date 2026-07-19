@@ -5,4 +5,7 @@ namespace wvm {
     int command_set(int argc, char** argv);
     int command_install(int argc, char** argv);
     int command_run(int argc, char** argv);
+    int command_status(int argc, char** argv);
+    int command_stop(int argc, char** argv);
+    int command_reboot(int argc, char** argv);
 }
