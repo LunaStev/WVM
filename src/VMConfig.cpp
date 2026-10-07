@@ -116,6 +116,7 @@ bool save_config(const std::filesystem::path& path, const VMConfig& config) {
 
     auto network = root.append_child("network");
     network.append_child("mode").text().set(config.network_mode.c_str());
+    network.append_child("model").text().set(config.network_model.c_str());
 
     return doc.save_file(path.string().c_str(), "    ");
 }
@@ -162,6 +163,7 @@ bool load_config(const std::filesystem::path& path, VMConfig& config) {
     config.display = text_or(display.child("type"), "gtk");
     config.graphics = text_or(display.child("graphics"), "virtio");
     config.network_mode = text_or(network.child("mode"), "user");
+    config.network_model = text_or(network.child("model"), "virtio-net-pci");
 
     return true;
 }
@@ -246,6 +248,10 @@ bool validate_config(const VMConfig& config, std::string& error) {
 
     if (!is_one_of(config.network_mode, {"user", "none"})) {
         error = "Network mode must be 'user' or 'none'.";
+        return false;
+    }
+    if (!is_one_of(config.network_model, {"virtio-net-pci", "e1000"})) {
+        error = "Network adapter must be VirtIO or Intel E1000.";
         return false;
     }
 

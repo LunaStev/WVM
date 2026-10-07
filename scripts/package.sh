@@ -21,7 +21,7 @@ if command -v rpmbuild >/dev/null 2>&1; then
 fi
 
 for generator in "${generators[@]}"; do
-    cpack --config "${build_dir}/CPackConfig.cmake" -G "${generator}"
+    cpack --config "${build_dir}/CPackConfig.cmake" -G "${generator}" -B "${build_dir}"
 done
 
 echo "Packages are available in ${build_dir}"

@@ -1,185 +1,79 @@
-# WVM - Wave Virtual Machine Manager
+# WVM Workstation 2
 
-WVM (Wave Virtual Machine Manager) is an independent VM client built on top of QEMU/KVM. It manages project-local VM definitions, disks, installation media, and QEMU processes without routing commands through a shell.
+WVM is a native Qt desktop workstation for local QEMU/KVM virtual machines. Version 2 replaces the CLI-driven GUI with a desktop application that manages QEMU processes, QMP commands, disks, and guest consoles directly. It does not require the v1 CLI to be installed.
 
-## Features
+The existing release is preserved at the annotated **`v1`** tag (`b8eefbd`). GUI development continues on **`v2`**. Version 2 is a development baseline, not a claim of VMware feature parity.
 
-- **Project-based VM Management**: Initialize a VM configuration within a directory.
-- **Simplified CLI**: Easy-to-use commands for common VM operations.
-- **XML Configuration**: Store VM settings in a readable `wvm.xml` file.
-- **Automatic QEMU Command Generation**: Build complex QEMU commands automatically based on your configuration.
-- **Automatic KVM Setup**: Loads KVM modules and grants the desktop user device access on first launch through the system authorization dialog.
-- **Safe Process Execution**: Passes arguments directly to QEMU instead of evaluating shell command strings.
-- **Dry Runs**: Inspect the exact QEMU invocation without starting or modifying a VM.
-- **QMP Lifecycle Control**: Query, shut down, force-stop, and reset a running QEMU VM through its management socket.
-- **Qt Desktop Client**: Create, install, start, stop, and inspect VMs from a focused single-window interface.
-- **Native Performance Defaults**: Requires KVM for native guests and automatically uses VirtIO block, networking, and graphics devices.
+## Desktop workflow
 
-## Prerequisites
+Launch `wvm` from the applications menu or terminal. `wvm-gui` is retained as a compatibility launcher. The interface uses standard Qt menus, a toolbar, VM library tree, details and console tabs, and a dockable task log.
 
-To build and run WVM, you need:
+- **Persistent VM library:** keep multiple VMs, filter by name, view current state and reopen the same selection after restarting the app.
+- **New VM wizard:** choose a guest family, name, location, CPU, memory, disk size, installer ISO, or existing disk image.
+- **Guest profiles:** Linux/BSD use VirtIO devices; Windows/Other use compatible storage, VGA, and Intel E1000 networking. Hardware can be changed while powered off.
+- **Disk import:** QEMU-supported images are converted to a separate QCOW2 copy without changing the source. Source snapshot histories are not copied.
+- **Embedded console:** display and control the guest in the Qt app, including keyboard, pointer, full-screen mode, and Ctrl+Alt+Delete. Press Ctrl+Alt to release keyboard input.
+- **Lifecycle controls:** power on, request guest shutdown, pause/resume, reset, and power off through QMP. Multiple VMs can run independently.
+- **Settings:** edit CPU, memory, storage controller, graphics, NAT/disconnected networking, installation ISO, and notes.
+- **Disk snapshots:** create, list, restore, and delete internal QCOW2 snapshots while powered off. These preserve disk contents, not guest memory.
+- **Full clones:** create an independent QCOW2 disk and configuration from a powered-off VM.
+- **Disk expansion:** increase virtual capacity, with actual disk size checked first; shrinking is rejected. Expand the partition/filesystem inside the guest afterwards.
+- **v1 import:** File → Open Virtual Machine accepts an existing `wvm.xml` without moving or copying its disk.
 
-- **CMake** (version 3.20 or higher)
-- **C++20 Compiler** (e.g., GCC 10+, Clang 10+)
-- **pugixml** library
-- **Qt 6.2+ Widgets** development files for the desktop client
-- **QEMU** (specifically the `qemu-system-*` binaries and `qemu-img` for disk management)
+Removing a VM from the library preserves its files. Closing the application with running VMs requires an explicit decision to power them off; disk operations must finish first.
 
-## Building
+## Acceleration and local connections
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/LunaStev/wvm.git
-   cd wvm
-   ```
+Native guests require KVM. WVM automatically prepares modules and user access through a narrow host-setup helper and the system administrator authorization dialog. When CPU virtualization is not exposed, the app explains the UEFI setting or outer-host nested virtualization requirement. It does not silently fall back to a slow software VM.
 
-2. Create a build directory and compile:
-   ```bash
-   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-   cmake --build build --parallel
-   ```
+Compatible VirtIO guests automatically use `virtio-vga-gl` and EGL headless rendering when an accessible GPU render node is present. Otherwise WVM uses the 2D graphics path. Actual 3D support depends on the host drivers, QEMU build, and guest driver.
 
-3. (Optional) Install the binary:
-   ```bash
-   sudo cmake --install build
-   ```
+The integrated console uses the [RFB protocol](https://www.rfc-editor.org/rfc/rfc6143) on a private local Unix socket. No VNC TCP port is exposed. QMP uses a separate private socket, and each VM holds a runtime lock to prevent duplicate desktop instances. QEMU is launched with an argument vector without shell evaluation.
 
-## Usage
+Library metadata lives under Qt's application-data directory, normally `~/.local/share/LunaStev/WVM/library.json`. VM configuration and disks remain in their VM directories. Runtime sockets live under the user runtime directory and use short hashed names, so long VM directory names do not exceed Unix socket limits.
 
-The desktop client is the primary interface:
+## Build and install
+
+The currently implemented host target is Linux x86_64. Guest profiles cover Linux, Windows, BSD, and other QEMU-compatible x86 operating systems; this is not yet a cross-platform host application.
+
+Build dependencies: CMake 3.20+, a C++20 compiler, pugixml, Qt 6.2+ Widgets/Network, and Qt Test when testing is enabled. Runtime dependencies include QEMU system binaries, `qemu-img`, `kmod`, `acl`, and PolicyKit.
 
 ```bash
-wvm-gui
+cmake -S . -B build/v2 -DCMAKE_BUILD_TYPE=Release
+cmake --build build/v2 --parallel
+ctest --test-dir build/v2 --output-on-failure
+./build/v2/wvm
 ```
 
-Choose or create a VM directory, set its resources, select an installation ISO, and use the Start, Restart, and Shut down buttons. The CLI remains available for headless systems and automation.
+`scripts/install.sh` builds, tests, and installs under `/usr/local`. Set `WVM_INSTALL_PREFIX` for another prefix. Installed components are:
 
-### 1. Initialize a new VM project
-Create a `wvm.xml` with default settings in the current directory.
-```bash
-wvm init
-```
+- `bin/wvm`: primary desktop application.
+- `bin/wvm-gui`: compatibility launcher.
+- `libexec/wvm/wvm-host-setup`: local KVM setup helper.
+- Desktop launcher and application icon.
 
-### 2. Configure VM parameters
-Set the disk size, memory, and CPU cores. This command also creates the virtual disk image if it doesn't exist.
-```bash
-wvm set --size 64G --memory 4G --cores 4
-```
+`scripts/package.sh` produces `.tar.gz` and available host-native `.deb`/`.rpm` packages in `build/package`. Binary packages should be built on the intended target distribution because Qt and C++ runtime versions differ.
 
-WVM applies KVM, VirtIO block, VirtIO networking, and VirtIO graphics automatically. If a writable GPU render node is available, it enables VirtIO GL and the GTK/SDL OpenGL display path; otherwise it uses VirtIO 2D. These are managed defaults rather than user-facing tuning options.
-
-### Performance check
+The v1 CLI is optional for compatibility and automation:
 
 ```bash
-wvm doctor .
+cmake -S . -B build/v2 -DWVM_BUILD_LEGACY_CLI=ON
+cmake --build build/v2 --parallel
+./build/v2/wvm-cli doctor .
 ```
 
-For a native guest, WVM prepares the KVM kernel modules and `/dev/kvm` access automatically when the VM is powered on. The operating system may show one administrator authorization prompt. If the CPU virtualization flag itself is missing, WVM gives the exact AMD SVM or Intel VT-x firmware setting to enable; firmware is the only layer an application cannot change. WVM refuses to silently launch a slow native guest through TCG.
+## Verification
 
-`wvm host-setup` can be used to perform the same automatic host preparation before starting a VM.
+Tests cover legacy XML compatibility and QEMU argument generation; persistent library and settings; real QCOW2 creation, snapshot content restoration, deletion, cloning, and preservation of removed VM files; plus an actual QEMU process with embedded framebuffer reception and QMP pause/resume/quit. The integration test explicitly uses TCG to run in development environments without KVM. The desktop app still requires KVM.
 
-### 3. Set installation source
-Specify an ISO or disk image for installation. ISO media is used for the first boot only; an installer reboot returns to the VM disk, and a successfully completed QEMU session switches future launches to disk mode.
-```bash
-wvm install . --iso /path/to/os-installer.iso
-```
+QEMU socket tests require an environment that allows local Unix socket creation. `qemu-img` and `qemu-system-x86_64` are required for the corresponding integration tests.
 
-### 4. Run the VM
-Launch the virtual machine using QEMU.
-```bash
-wvm run
-```
+## Remaining workstation work
 
-Boot from the system disk or temporarily preview another source:
+The current implementation uses legacy BIOS boot. UEFI firmware, Secure Boot and virtual TPM integration are not yet implemented, so do not treat Windows 11 installation as supported. USB/PCI/GPU passthrough, bridged/host-only networks, shared folders/clipboard, audio forwarding, saved-memory suspend and live snapshots, multi-disk editing, and remote hosts remain future work. The embedded console currently uses raw/CopyRect framebuffer updates, not a compressed remote-desktop transport.
 
-```bash
-wvm run . --disk
-wvm run . --iso /path/to/os-installer.iso --dry-run
-wvm run . --img /path/to/boot.img --dry-run
-```
-
-If QEMU was killed and left a stale `.wvm/qmp.sock`, first confirm that no VM process is running and then use `wvm run . --recover` to remove only that stale runtime socket.
-
-### 5. Control a running VM
-
-While `wvm run` owns the foreground QEMU process, another terminal can control it through QMP:
-
-```bash
-wvm status .
-wvm reboot .
-wvm stop .
-wvm stop . --force
-```
-
-`stop` requests an ACPI shutdown from the guest. `--force` sends QEMU's immediate `quit` command.
-
-## Configuration
-
-The configuration is stored in `wvm.xml`. You can manually edit this file to fine-tune your VM settings:
-
-```xml
-<wvm version="1">
-    <machine>
-        <name>my-vm</name>
-        <arch>x86_64</arch>
-        <type>q35</type>
-        <cpu>host</cpu>
-        <acceleration>kvm</acceleration>
-        <memory>4G</memory>
-        <cores>4</cores>
-    </machine>
-    <disk>
-        <path>disk.qcow2</path>
-        <size>64G</size>
-        <format>qcow2</format>
-        <interface>virtio</interface>
-    </disk>
-    <boot>
-        <mode>iso</mode>
-        <path>os.iso</path>
-    </boot>
-    <display>
-        <type>gtk</type>
-        <graphics>virtio</graphics>
-    </display>
-    <network>
-        <mode>user</mode>
-    </network>
-</wvm>
-```
-
-Performance-related values are written by WVM and normally do not need manual editing. Supported disk formats are `qcow2` and `raw`. Boot modes are `none`, `disk`, `iso`, and `img`; network modes are `user` and `none`.
-
-## Installation and packages
-
-Build, test, and install under `/usr/local`:
-
-```bash
-scripts/install.sh
-```
-
-Set `WVM_INSTALL_PREFIX` to choose another prefix. To generate the packages supported by the host (`.tar.gz`, `.deb`, and/or `.rpm`):
-
-```bash
-scripts/package.sh
-```
-
-The packages include `wvm`, `wvm-gui`, the desktop launcher, and the scalable application icon.
-
-## Testing
-
-```bash
-cmake -S . -B build -DBUILD_TESTING=ON
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-## Project Direction
-
-WVM uses QEMU/KVM as its virtualization engine and aims to provide its own lifecycle, storage, networking, snapshot, and desktop client experience. QEMU remains the low-level device and CPU emulator; WVM owns the safer and simpler user-facing workflow.
-
-QEMU is not vendored or evaluated through a shell. WVM launches the installed `qemu-system-*` executable with an argument vector and exposes a project-local `.wvm/qmp.sock` using the official [QEMU Machine Protocol](https://www.qemu.org/docs/master/interop/qmp-spec.html). This keeps QEMU replaceable while giving WVM direct programmatic control over each VM.
+QEMU remains the virtualization engine. WVM builds on the official [QEMU invocation](https://www.qemu.org/docs/master/system/invocation.html), [QMP](https://www.qemu.org/docs/master/interop/qmp-spec.html), and [qemu-img](https://www.qemu.org/docs/master/tools/qemu-img.html) interfaces rather than vendoring QEMU source.
 
 ## License
 
-This project is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**. See the [LICENSE](LICENSE) file for details.
+[Mozilla Public License 2.0](LICENSE).

@@ -25,6 +25,7 @@ struct VMConfig {
     std::string display = "gtk";
     std::string graphics = "virtio";
     std::string network_mode = "user";
+    std::string network_model = "virtio-net-pci";
 };
 
 bool save_config(const std::filesystem::path& path, const VMConfig& config);

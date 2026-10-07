@@ -172,16 +172,12 @@ int configure_kvm_as_root(const uid_t target_uid) {
         return 1;
     }
 
-    struct stat device_stat {};
-    if (stat("/dev/kvm", &device_stat) == 0) {
-        const group* device_group = getgrgid(device_stat.st_gid);
-        if (device_group != nullptr && device_group->gr_name != nullptr) {
-            const int group_result = run_process({
-                "usermod", "-a", "-G", device_group->gr_name, account->pw_name
-            });
-            if (group_result != 0) {
-                std::cerr << "Warning: could not persist KVM group membership.\n";
-            }
+    if (getgrnam("kvm") != nullptr) {
+        const int group_result = run_process({
+            "usermod", "-a", "-G", "kvm", account->pw_name
+        });
+        if (group_result != 0) {
+            std::cerr << "Warning: could not persist KVM group membership.\n";
         }
     }
 

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Compatibility launcher for existing desktop shortcuts.
+exec "$(dirname -- "$0")/wvm" "$@"

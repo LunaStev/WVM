@@ -112,7 +112,7 @@ Command build_qemu_command(
     if (config.network_mode == "user") {
         command.insert(command.end(), {
             "-netdev", "user,id=net0",
-            "-device", "virtio-net-pci,netdev=net0"
+            "-device", config.network_model + ",netdev=net0"
         });
     } else {
         command.insert(command.end(), {"-nic", "none"});
@@ -125,7 +125,7 @@ Command build_qemu_command(
         });
     }
 
-    if (enable_gpu_acceleration
+    if (enable_gpu_acceleration && config.graphics == "virtio"
         && (config.display == "gtk" || config.display == "sdl")) {
         command.insert(command.end(), {"-device", "virtio-vga-gl"});
         command.insert(command.end(), {"-display", config.display + ",gl=on"});
