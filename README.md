@@ -2,7 +2,7 @@
 
 WVM is a native Qt desktop workstation for local QEMU/KVM virtual machines. Version 2 replaces the CLI-driven GUI with a desktop application that manages QEMU processes, QMP commands, disks, and guest consoles directly. It does not require the v1 CLI to be installed.
 
-The existing release is preserved at the annotated **`v1`** tag (`b8eefbd`). GUI development continues on **`v2`**. Version 2 is a development baseline, not a claim of VMware feature parity.
+The existing release is preserved at the annotated **`v1`** tag (`b8eefbd`). Version 2 and subsequent development continue on **`master`**. Version 2 is a development baseline, not a claim of VMware feature parity.
 
 ## Desktop workflow
 
